@@ -9,10 +9,9 @@
 import PropTypes from 'prop-types';
 import React from 'react';
 
-import { ListView, View, StyleSheet } from 'react-native';
+import { FlatList, View, StyleSheet } from 'react-native';
 
 import shallowequal from 'shallowequal';
-import InvertibleScrollView from 'react-native-invertible-scroll-view';
 import md5 from 'md5';
 import LoadEarlier from './LoadEarlier';
 import Message from './Message';
@@ -25,17 +24,10 @@ export default class MessageContainer extends React.Component {
     this.renderRow = this.renderRow.bind(this);
     this.renderFooter = this.renderFooter.bind(this);
     this.renderLoadEarlier = this.renderLoadEarlier.bind(this);
-    this.renderScrollComponent = this.renderScrollComponent.bind(this);
-
-    const dataSource = new ListView.DataSource({
-      rowHasChanged: (r1, r2) => {
-        return r1.hash !== r2.hash;
-      },
-    });
 
     const messagesData = this.prepareMessages(props.messages);
     this.state = {
-      dataSource: dataSource.cloneWithRows(messagesData.blob, messagesData.keys),
+      dataSource: messagesData,
     };
   }
 
@@ -45,7 +37,7 @@ export default class MessageContainer extends React.Component {
     }
     const messagesData = this.prepareMessages(nextProps.messages);
     this.setState({
-      dataSource: this.state.dataSource.cloneWithRows(messagesData.blob, messagesData.keys),
+      dataSource: messagesData,
     });
   }
 
@@ -60,26 +52,24 @@ export default class MessageContainer extends React.Component {
   }
 
   prepareMessages(messages) {
-    return {
-      keys: messages.map((m) => m._id),
-      blob: messages.reduce((o, m, i) => {
-        const previousMessage = messages[i + 1] || {};
-        const nextMessage = messages[i - 1] || {};
-        // add next and previous messages to hash to ensure updates
-        const toHash = JSON.stringify(m) + previousMessage._id + nextMessage._id;
-        o[m._id] = {
-          ...m,
-          previousMessage,
-          nextMessage,
-          hash: md5(toHash),
-        };
-        return o;
-      }, {}),
-    };
+    return messages.map((m, i) => {
+      const previousMessage = messages[i + 1] || {};
+      const nextMessage = messages[i - 1] || {};
+      // add next and previous messages to hash to ensure updates
+      const toHash = JSON.stringify(m) + previousMessage._id + nextMessage._id;
+
+      return {
+        ...m,
+        previousMessage,
+        nextMessage,
+        hash: md5(toHash),
+      };
+    });
   }
 
-  scrollTo(options) {
-    this._invertibleScrollViewRef.scrollTo(options);
+  scrollToBottom() {
+    const index = this.props.inverted ? 0 : this.props.messages.length - 1;
+    this._flatList.scrollToIndex({ index, animated: true });
   }
 
   renderLoadEarlier() {
@@ -131,17 +121,6 @@ export default class MessageContainer extends React.Component {
     return <Message {...messageProps} />;
   }
 
-  renderScrollComponent(props) {
-    const { invertibleScrollViewProps } = this.props;
-    return (
-      <InvertibleScrollView
-        {...props}
-        {...invertibleScrollViewProps}
-        ref={(component) => (this._invertibleScrollViewRef = component)}
-      />
-    );
-  }
-
   render() {
     const contentContainerStyle = this.props.inverted
       ? {}
@@ -149,18 +128,19 @@ export default class MessageContainer extends React.Component {
 
     return (
       <View style={styles.container}>
-        <ListView
+        <FlatList
+          ref={(component) => (this._flatList = component)}
           enableEmptySections
           automaticallyAdjustContentInsets={false}
-          initialListSize={20}
-          pageSize={20}
           {...this.props.listViewProps}
-          dataSource={this.state.dataSource}
+          {...this.props.invertibleScrollViewProps}
+          keyExtractor={(row) => row._id}
+          data={this.state.dataSource}
           contentContainerStyle={contentContainerStyle}
-          renderRow={this.renderRow}
+          renderItem={({ item }) => this.renderRow(item)}
           renderHeader={this.props.inverted ? this.renderFooter : this.renderLoadEarlier}
           renderFooter={this.props.inverted ? this.renderLoadEarlier : this.renderFooter}
-          renderScrollComponent={this.renderScrollComponent}
+          inverted
         />
       </View>
     );
